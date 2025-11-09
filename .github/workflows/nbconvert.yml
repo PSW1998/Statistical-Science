@@ -1,26 +1,57 @@
 name: build-notebook-pdf
+
 on:
   push:
     paths:
-      - "**.ipynb"
+      - "**/*.ipynb"
       - ".github/workflows/nbconvert.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install "nbconvert[webpdf]" nbformat jupyterlab_pygments
-      - name: Build PDF(s)
+
+      - name: Install nbconvert (webpdf) and deps
         run: |
-          # convert every .ipynb in the repo root (skip checkpoints)
-          for nb in $(find . -name "*.ipynb" ! -path "*/.ipynb_checkpoints/*"); do
-            jupyter nbconvert --to webpdf --execute "$nb"
+          python -m pip install --upgrade pip
+          pip install "nbconvert[webpdf]" nbformat jupyterlab_pygments
+          # Pre-install Chromium for webpdf renderer
+          python -m pyppeteer install
+
+      - name: Convert notebooks to PDF (no execution)
+        run: |
+          set -e
+          shopt -s globstar nullglob
+          for nb in **/*.ipynb; do
+            # skip Jupyter checkpoints
+            if [[ "$nb" == *".ipynb_checkpoints"* ]]; then continue; fi
+            echo "Converting $nb → PDF"
+            jupyter nbconvert --to webpdf "$nb"
           done
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload PDFs as artifact
+        uses: actions/upload-artifact@v4
         with:
           name: notebook-pdfs
-          path: "*.pdf"
+          path: "**/*.pdf"
+
+      - name: Commit PDFs back to repo (main branch only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add **/*.pdf
+          git commit -m "Add rendered notebook PDF(s)" || echo "No changes to commit"
+          git push
+
