@@ -26,35 +26,37 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "nbconvert[webpdf]" nbformat jupyterlab_pygments
-          # Pre-download Chromium for the webpdf exporter (pyppeteer)
+          # Ensure headless Chromium is available for webpdf
           python -m pyppeteer install
 
       - name: Convert notebooks to PDF (no execution)
         shell: bash
         run: |
           set -euo pipefail
-          # Find notebooks (skip checkpoints), handle spaces safely
+          mkdir -p _pdf
+          # Find .ipynb (skip checkpoints), handle spaces with -print0
           while IFS= read -r -d '' nb; do
             echo "Converting: $nb"
-            jupyter nbconvert --to webpdf "$nb"
+            jupyter nbconvert --to webpdf "$nb" --output-dir=_pdf
           done < <(find . -type f -name "*.ipynb" -not -path "*/.ipynb_checkpoints/*" -print0)
 
       - name: Upload PDFs as artifact
         uses: actions/upload-artifact@v4
         with:
           name: notebook-pdfs
-          path: "**/*.pdf"
+          path: _pdf/*.pdf
           if-no-files-found: error
 
-      # Optional: commit PDFs back to the repo on main
+      # Optional: commit PDFs back to repo on main
       - name: Commit PDFs back to repo
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add **/*.pdf
+          git add _pdf/*.pdf
           git commit -m "Add rendered notebook PDF(s)" || echo "No changes to commit"
           git push
+
 
 
 
